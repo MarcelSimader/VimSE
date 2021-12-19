@@ -210,6 +210,6 @@ function vimse#SmartSurround(lstart, lend, cstart, cend,
     " delete lines so we don't copy the middle ones
     call deletebufline(bufname(), a:lstart + 1, a:lend)
     " set and return final pos
-    return SmartInsert(a:lstart, lines, startindent)
+    return vimse#SmartInsert(a:lstart, lines, startindent)
 endfunction
 
