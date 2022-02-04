@@ -169,20 +169,20 @@ function vimse#SmartSurround(lstart, lend, cstart, cend,
     let startindent = indent(a:lstart)
     " construct lines
     if a:lend - a:lstart <= 0
-        let middle = [trim(getline(a:lstart))]
+        let middle = [getline(a:lstart)]
         " ~~~~~~~~~~
         " (L) [ ]
-        let lines = [strpart(middle[0], 0, a:cstart - startindent - 1)
+        let lines = [strpart(middle[0], 0, a:cstart - 1)
                     \ .get(a:textbefore, 0, '')]
         " [ ] append
         let lines += a:textbefore[1:]
         " [ ] (I) [ ] concat
-        let lines[-1] .= strpart(middle[0], a:cstart - startindent - 1, a:cend - a:cstart)
+        let lines[-1] .= strpart(middle[0], a:cstart - 1, a:cend - a:cstart)
                     \ .get(a:textafter, 0, '')
         " [ ] append
         let lines += a:textafter[1:]
         " [ ] (R) concat
-        let lines[-1] .= strpart(middle[0], a:cend - startindent - 1, 999999)
+        let lines[-1] .= strpart(middle[0], a:cend - 1, 999999)
     else
         let middle = getline(a:lstart, a:lend)
         " ~~~~~~~~~~
