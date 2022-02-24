@@ -14,7 +14,7 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
     let oldpos = getpos('.') | call cursor(a:lstart, a:cstart)
     " for all arguments
     for argidx in range(a:numargs)
-        let pat = '#'.(argidx + 1)
+        let pat = '#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
         " get positions of replace items and highlight
         let positions = map(vimse#AllMatchStrPos(lines, pat),
                     \ {_, val -> [a:lstart + val[1], val[2] + 1, val[3] - val[2]]})
@@ -31,8 +31,20 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
         call matchdelete(id)
         " check for abort
         if empty(text) | let status = 0 | break | endif
-        for i in range(a:lstart, a:lend)
-            call setline(i, substitute(getline(i), pat, text, 'g'))
+        for [lnum, column, length] in positions
+            let line = getline(lnum)
+            let match = slice(line, column - 1, column + length)
+            let syndict = s:TemplateStringSyntax(match)
+            if syndict['case'] == 1
+                call setline(lnum, substitute(line, pat, text, ''))
+            elseif syndict['case'] == 2
+                let rtext = substitute(text, syndict['pat'], syndict['sub'], 'g')
+                call setline(lnum, substitute(line, pat, rtext, ''))
+            else
+                echohl ErrorMsg
+                echo 'Invalid replacement string syntax "'.match.'"'
+                echohl None
+            endif
         endfor
     endfor
     " restore cursor
@@ -40,10 +52,30 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
     return status
 endfunction
 
-" This is a test
+" This is #1 test
 " and here is #1, okay?
 " and here is #2
-" #1 again yup
+" #/./x/1 again yup
+
+" \section{#1}
+" \label{sec:#/\s/-/1}
+
+" TODO: write docs
+" internal function to handle the replacement syntax
+function s:TemplateStringSyntax(str)
+    " digit case
+    let match = matchlist(a:str, '#\(\d\+\)')
+    if !empty(match)
+        return #{case: 1, num: str2nr(match[1])}
+    endif
+    " sub case
+    let match = matchlist(a:str, '#/\(.\{-1,}\)/\(.\{-}\)/\(\d\+\)')
+    if !empty(match)
+        return #{case: 2, pat: match[1], sub: match[2], num: str2nr(match[3])}
+    endif
+    " def case
+    return #{case: 0}
+endfunction
 
 " Returns all matches of 'pat' in the string 'expr' as list of strings.
 " See 'vimse#AllMatchStrPos' for more information on the arguments.
