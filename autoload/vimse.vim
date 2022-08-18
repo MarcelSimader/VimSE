@@ -3,15 +3,52 @@
 " Date: 15.12.2021
 " (c) Marcel Simader 2021
 
-" TODO: write docs for TemplateString
+" Takes a section of text as input and replaces specific patterns with the user's input.
+"
+" This is easiest explained with an example case, here we replace the language and the
+" code of a Markdown code block with user input. The template text specified by the
+" template variable format '#n' looks like this:
+"
+" 1 | ```#1
+" 2 | #2
+" 3 | ```
+"
+" The call would look like this: 'vimse#TemplateString(1, 3, 0, 999, 2)'. One may also
+" name the arguments, provide defaults, or provide a completion argument (see ':h input()'
+" for details).
+"
+" It is possible to modify the user input before putting it into the template by writing
+" the argument not as '#n', but as '#/pat/sub/n'. For instance if we wanted to make sure
+" the code was indented correctly (with two spaces), we could use the following template
+" variable:
+"
+" 1 | ```#1
+" 2 |   #/\\n/\n  /2
+" 3 | ```
+"
+" Arguments:
+"   lstart, the line to start on
+"   lend, the line to end on
+"   cstart, the column to start on
+"   cend, the column to end on
+"   numargs, the number of template variables to search for
+"   [argnames,] the names displayed for each argument input prompt as list
+"   [argdefaults,] the default text displayed for each input prompt as list
+"   [argcomplete,] the completion argument for each input prompt as list
+" Returns:
+"   the number '1' if the template was filled out, or '0' if the user aborted it or a
+"   problem ocurred during the operation
 function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
             \ argnames = [], argdefaults = [], argcomplete = [])
     " argument errors
     if a:numargs < 1 | return 1 | endif
     " set up variables
-    let [id, status, lines] = [42, 1, getline(a:lstart, a:lend)]
+    let status = 1
+    let id = 42
+    let lines = getline(a:lstart, a:lend)
     " put cursor on first col
-    let oldpos = getpos('.') | call cursor(a:lstart, a:cstart)
+    let oldpos = getpos('.')
+    call cursor(a:lstart, a:cstart)
     " for all arguments
     for argidx in range(a:numargs)
         let pat = '#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
@@ -19,7 +56,15 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
         let positions = map(vimse#AllMatchStrPos(lines, pat),
                     \ {_, val -> [a:lstart + val[1], val[2] + 1, val[3] - val[2]]})
         call matchaddpos('Search', positions, 999, id) | redraw
-        " ask for input and search-and-replace every line
+        " if possible, open a popup cause why not
+        if has('popupwin')
+            let popupwin_id = popup_atcursor(
+                        \ 'Variable '.string(argidx + 1).' of '.string(a:numargs),
+                        \ #{border: []})
+            " IMPORTANT! otherwise this will just not show up
+            redraw
+        endif
+        " ask for input without or with completion options
         if empty(get(a:argcomplete, argidx, ''))
             let text = input(get(a:argnames, argidx, 'Text: '),
                         \ get(a:argdefaults, argidx, ''))
@@ -28,23 +73,28 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
                         \ get(a:argdefaults, argidx, ''),
                         \ get(a:argcomplete, argidx, ''))
         endif
+        if has('popupwin') | call popup_close(popupwin_id) | endif
         call matchdelete(id)
         " check for abort
         if empty(text) | let status = 0 | break | endif
         for [lnum, column, length] in positions
             let line = getline(lnum)
             let match = slice(line, column - 1, column + length)
+            " analyze the template string further to determine what to do
             let syndict = s:TemplateStringSyntax(match)
             if syndict['case'] == 1
-                call setline(lnum, substitute(line, pat, text, ''))
+                " case of simple substitution
+                let newtext = text
             elseif syndict['case'] == 2
-                let rtext = substitute(text, syndict['pat'], syndict['sub'], 'g')
-                call setline(lnum, substitute(line, pat, rtext, ''))
+                " case of a regular expression substitution of the input
+                let newtext = substitute(text, syndict['pat'], syndict['sub'], 'g')
             else
                 echohl ErrorMsg
                 echo 'Invalid replacement string syntax "'.match.'"'
                 echohl None
             endif
+            let newlines = split(substitute(line, pat, newtext, ''), '\n')
+            call vimse#SmartInsert(lnum, newlines)
         endfor
     endfor
     " restore cursor
@@ -52,16 +102,14 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
     return status
 endfunction
 
-" This is #1 test
-" and here is #1, okay?
-" and here is #2
-" #/./x/1 again yup
-
-" \section{#1}
-" \label{sec:#/\s/-/1}
-
-" TODO: write docs
 " internal function to handle the replacement syntax
+" Arguments:
+"   str, the template string to analyze
+" Returns:
+"   a dictionary with the following contents based on the template case:
+"     - 'case: 1', a simple digit template like '#1', contains this number as 'num'
+"     - 'case: 2', case with a digit and a regular expression substitution like '#/a/b/1,
+"         contains the number as 'num', and the regular expression as 'pat' and 'sub'
 function s:TemplateStringSyntax(str)
     " digit case
     let match = matchlist(a:str, '#\(\d\+\)')
@@ -142,8 +190,9 @@ endfunction
 " |   TTT           indent=0   | TTT
 " |    ABC                     |  ABC
 " Arguments:
-"   lines, an array of lines
-"   indent, the number of spaces to indent
+"   lines, a list of lines
+"   indent, the number of spaces to indent, when set to any value smaller than 0, this
+"       function will return the original list
 "   [start,] defaults to '0', the line to start on
 "   [end,] defaults to 'len(lines) - 1', the line to end on
 " Returns:
@@ -169,7 +218,7 @@ endfunction
 " is overwritten, and the rest of the lines are inserted after it.
 " Returns:
 "   The end position of the cursor after the insert.
-function vimse#SmartInsert(lnum, lines, indent)
+function vimse#SmartInsert(lnum, lines, indent = -1)
     call vimse#IndentLines(a:lines, a:indent)
     " set first line
     call setline(a:lnum, get(a:lines, 0, ''))
