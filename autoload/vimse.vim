@@ -3,6 +3,110 @@
 " Date: 15.12.2021
 " (c) Marcel Simader 2021
 
+" A primitve verison of Vim's builint 'input()' function, but with a callback for each
+" input key. This function asks the user for a prompt string and then captures characters
+" that are typed. Backspaces are supported, but almost nothing else. An input is
+" terminalted by Escape or Enter. When a character is typed, 'OnChange' is called.
+" Completion mode is largely supported, including custom completion functions.
+"
+" Arguments:
+"   [prompt,] the prompt that is used directly, probably add a space at the end, defaults
+"       to an empty string
+"   [default,] the default string at the start of the input procedure
+"   [complete,] the Vim specified completion argument, see ':h :command-complete'
+"   [OnChange,] a function taking two parameters that is called when a character is input,
+"       of form (complete_string, new_char) -> ..., defaults to 'v:none'
+" Returns:
+"   the final input as string
+function vimse#Input(prompt = '', default = '', complete = v:none, Onchange = v:none)
+    let ignore = [
+                \ "\<CursorHold>",
+                \ "\<LeftMouse>", "\<LeftDrag>", "\<LeftRelease>",
+                \ "\<MiddleMouse>", "\<MiddleDrag>", "\<MiddleRelease>",
+                \ "\<RightMouse>", "\<RightDrag>", "\<RightRelease>",
+                \ "\<2-LeftMouse>", "\<2-MiddleMouse>", "\<2-RightMouse>",
+                \ "\<3-LeftMouse>", "\<3-MiddleMouse>", "\<3-RightMouse>",
+                \ "\<C-LeftMouse>", "\<C-MiddleMouse>", "\<C-RightMouse>",
+                \ "\<S-LeftMouse>", "\<S-MiddleMouse>", "\<S-RightMouse>",
+                \ "\<M-LeftMouse>", "\<M-MiddleMouse>", "\<M-RightMouse>",
+                \ ]
+    " chars is the current state of the output string
+    let chars = a:default
+    " stub is the original text at start of completion mode
+    " list is the options that can be flipped through where index 0 is always the stub
+    " idx is the current index in the list
+    let complete_stub = v:none
+    let complete_list = []
+    let complete_idx  = 0
+    call inputsave()
+    echon a:prompt.chars
+    " accumulate characters
+    while 1
+        let c = getcharstr()
+        " skip cursorhold and other stuff, see ':h getchar()'
+        while index(ignore, c) != -1
+            let c = getcharstr()
+        endwhile
+        " end loop on ESC or CR
+        if c == "\<ESC>" || c == "\<CR>"
+            break
+        endif
+        " handle completion
+        if !((a:complete is v:none) || empty(a:complete))
+                    \ && (c == "\<Tab>" || c == "\<S-Tab>")
+            " get current completions if we were not in completion mode
+            if complete_stub is v:none
+                let complete_stub = chars
+                try
+                    let complete_list = s:getcompletion_custom(
+                                \ complete_stub, a:complete,
+                                \ chars, chars, len(chars))
+                catch 'E475'
+                    " the function might not cooperate so catch that and just end
+                    " the loop instead of trapping the user in an empty screen
+                    echohl ErrorMsg
+                    echomsg 'VimSE: Invalid completion argument'
+                    echomsg '-- '.v:exception
+                    echohl None
+                    break
+                endtry
+                " complete_list is of form [stub, ...options] so wrapping is easier
+                call insert(complete_list, complete_stub, 0)
+                let complete_idx  = 0
+            endif
+            let complete_idx = (complete_idx + ((c == "\<S-Tab>") ? -1 : 1))
+                        \ % len(complete_list)
+            let chars = complete_list[complete_idx]
+        else
+            " we are in complete mode but it was not tab so use the current prompt
+            if !(complete_stub is v:none)
+                let complete_stub = v:none
+                let complete_list = []
+                let complete_idx  = 0
+            endif
+            " we have our new character now
+            " if backspace, remove one character, otherwise add to chars
+            let chars = (c == "\<Backspace>") ? chars[:-2] : chars.c
+        endif
+        if !(a:Onchange is v:none) | call a:Onchange(chars, c) | endif
+        " print prompt and so far entered characters
+        redraw | echon a:prompt.chars
+    endwhile
+    redraw
+    call inputrestore()
+    return chars
+endfunction
+
+" Same as 'getcompletion()' but with support for 'custom,{func}' and 'customlist,{func}'
+" types. This will throw error E475 if a wrong 'type' is passed.
+function s:getcompletion_custom(pat, type, ArgLead = '', CmdLine = '', CursorPos = 0)
+    let custom_compl = matchlist(a:type, 'custom\%(list\)\=,\(.*\)')
+    let funcname = trim(get(custom_compl, 1, ''))
+    return empty(funcname)
+                \ ? getcompletion(a:pat, a:type)
+                \ : function(funcname)(a:ArgLead, a:CmdLine, a:CursorPos)
+endfunction
+
 " Takes a section of text as input and replaces specific patterns with the user's input.
 "
 " This is easiest explained with an example case, here we replace the language and the
@@ -40,66 +144,165 @@
 "   problem ocurred during the operation
 function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
             \ argnames = [], argdefaults = [], argcomplete = [])
-    " argument errors
-    if a:numargs < 1 | return 1 | endif
-    " set up variables
+    " status indicates whether the function returns with 1 or 0, as specified by the
+    " docstring above
     let status = 1
-    let id = 42
     let lines = getline(a:lstart, a:lend)
+    let haspopup = has('popupwin')
+    let win = win_getid()
+
     " put cursor on first col
     let oldpos = getpos('.')
     call cursor(a:lstart, a:cstart)
-    " for all arguments
+
+    " iterates over indices and makes regular expression pattern for the template
+    " variables
     for argidx in range(a:numargs)
-        let pat = '#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
-        " get positions of replace items and highlight
+        let pat      = '#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
+        let name     = get(a:argnames   , argidx, 'Text: ')
+        let default  = get(a:argdefaults, argidx, '')
+        let complete = get(a:argcomplete, argidx, '')
+        " get positions of replace items
         let positions = map(vimse#AllMatchStrPos(lines, pat),
-                    \ {_, val -> [a:lstart + val[1], val[2] + 1, val[3] - val[2]]})
-        call matchaddpos('Search', positions, 999, id) | redraw
+                    \ {_, val -> [
+                    \     lines[val[1]],
+                    \     val[0],
+                    \     a:lstart + val[1],
+                    \     val[2] + 1,
+                    \     val[3] - val[2],
+                    \ ]})
+        let match_positions = mapnew(positions, {_, val -> [val[2], val[3], val[4]]})
+        " setup hashGenDict which is entries of position hashes containing dictionairies
+        " with the key 'lnum', 'line', 'pat', and 'Generate' (and 'popup')
+        let hashGenDict = {}
+        for [line, match, lnum, column, length] in positions
+            let hashGenDict[s:PosHash(lnum, column)] = {
+                        \ 'lnum': lnum,
+                        \ 'column': column,
+                        \ 'lidx': lnum - a:lstart,
+                        \ 'match': match,
+                        \ 'Generate': {lidx, match, text ->
+                        \     s:TemplateStringVariable(lines[lidx], pat, text, match)},
+                        \ }
+        endfor
+        " highlight area and redraw
+        let match_id = (rand() % 8192) + 1
+        call matchaddpos('Search', match_positions, 999, match_id) | redraw
         " if possible, open a popup cause why not
-        if has('popupwin')
-            let popupwin_id = popup_atcursor(
-                        \ 'Variable '.string(argidx + 1).' of '.string(a:numargs),
-                        \ #{border: []})
-            " IMPORTANT! otherwise this will just not show up
+        if haspopup
+            for [hash, genDict] in items(hashGenDict)
+                let posDict  = screenpos(win, genDict['lnum'], 1)
+                let wincol   = get(get(getwininfo(win), 0, {}), 'wincol', 1)
+                let width    = winwidth(win) - (posDict['col'] - wincol)
+                " make 'popup' entry in hashGenDcit
+                let popup_id = popup_create(
+                            \ genDict['Generate'](
+                            \     genDict['lidx'], genDict['match'], default
+                            \ ),
+                            \ {
+                            \     'line'      : posDict['row'],
+                            \     'col'       : posDict['col'],
+                            \     'minwidth'  : width,
+                            \     'maxwidth'  : width,
+                            \     'pos'       : 'topleft',
+                            \     'close'     : 'click',
+                            \     'cursorline': 1,
+                            \ })
+                let genDict['popup'] = popup_id
+            endfor
+            function! UpdatePopups(text) closure
+                for [hash, genDict] in items(hashGenDict)
+                    call popup_settext(genDict['popup'],
+                                \ genDict['Generate'](
+                                \     genDict['lidx'], genDict['match'], a:text,
+                                \ ))
+                endfor
+            endfunction
+            " important! otherwise this will just not show up
             redraw
         endif
         " ask for input without or with completion options
-        if empty(get(a:argcomplete, argidx, ''))
-            let text = input(get(a:argnames, argidx, 'Text: '),
-                        \ get(a:argdefaults, argidx, ''))
-        else
-            let text = input(get(a:argnames, argidx, 'Text: '),
-                        \ get(a:argdefaults, argidx, ''),
-                        \ get(a:argcomplete, argidx, ''))
+        let text = vimse#Input(name, default, empty(complete) ? v:none : complete,
+                    \ {str, _ -> haspopup ? UpdatePopups(str) : 0})
+        " clear popups and highlight
+        if haspopup
+            for [hash, genDict] in items(hashGenDict)
+                call popup_close(genDict['popup'])
+            endfor
         endif
-        if has('popupwin') | call popup_close(popupwin_id) | endif
-        call matchdelete(id)
+        call matchdelete(match_id)
+        redraw
         " check for abort
-        if empty(text) | let status = 0 | break | endif
-        for [lnum, column, length] in positions
-            let line = getline(lnum)
-            let match = slice(line, column - 1, column + length)
-            " analyze the template string further to determine what to do
-            let syndict = s:TemplateStringSyntax(match)
-            if syndict['case'] == 1
-                " case of simple substitution
-                let newtext = text
-            elseif syndict['case'] == 2
-                " case of a regular expression substitution of the input
-                let newtext = substitute(text, syndict['pat'], syndict['sub'], 'g')
-            else
-                echohl ErrorMsg
-                echo 'Invalid replacement string syntax "'.match.'"'
-                echohl None
+        if empty(text)
+            let status = 0
+            break
+        endif
+        " we need to sort these items in order of lines and columns, so that when we
+        " instert multiple lines later references can be updated in time
+        let items = sort(sort(items(hashGenDict),
+                    \ {a, b -> a[1]['column'] - b[1]['column']}),
+                    \ {a, b -> a[1]['lnum']   - b[1]['lnum']})
+        for [hash, genDict] in items
+            let lidx = genDict['lidx']
+            let newlines = genDict['Generate'](lidx, genDict['match'], text)
+            " actually replace conents now
+            call vimse#SmartInsert(genDict['lnum'], newlines)
+            " update lines list and all references in case we added lines
+            let lines = slice(lines, 0, lidx) + newlines + slice(lines, lidx + 1)
+            let linediff = len(newlines) - 1
+            if linediff > 0
+                for [nhash, ngenDict] in items
+                    if nhash != hash && ngenDict['lnum'] >= genDict['lnum']
+                        " this comes after the more than 1 lines we inserted
+                        let ngenDict['lnum'] += linediff
+                        let ngenDict['lidx'] += linediff
+                    endif
+                endfor
             endif
-            let newlines = split(substitute(line, pat, newtext, ''), '\n')
-            call vimse#SmartInsert(lnum, newlines)
         endfor
     endfor
-    " restore cursor
+
+    " restore cursor position
     call setpos('.', oldpos)
     return status
+endfunction
+
+" Computes a hash of a line numebr and a column.
+" Arguments:
+"   lnum, the line number
+"   column, the column
+" Returns:
+"   a string hash
+function s:PosHash(lnum, column)
+    let s = string([a:lnum, a:column])
+    return exists('*sha256') ? sha256(s) : s
+endfunction
+
+" Takes in a replacement variable pattern, and a match and returns the replaced lines as
+" single string.
+" Arguments:
+"   line, the line to substitute
+"   pat, the pattern to look for in said line
+"   text, the text to replace the match by
+"   match, a match of the replacement variable pattern
+" Returns:
+"   a list of strings with the interpreted variable, or an empty list if an error occurred
+function s:TemplateStringVariable(line, pat, text, match)
+    " analyze the template string further to determine what to do
+    let syndict = s:TemplateStringSyntax(a:match)
+    if syndict['case'] == 1
+        " case of simple substitution
+        let new = a:text
+    elseif syndict['case'] == 2
+        " case of a regular expression substitution of the input
+        let new = substitute(a:text, syndict['pat'], syndict['sub'], 'g')
+    else
+        echohl ErrorMsg
+        echomsg 'Invalid replacement string syntax "'.a:match.'"'
+        echohl None
+        return []
+    endif
+    return split(substitute(a:line, syndict['regex'], new, 'g'), '\n')
 endfunction
 
 " internal function to handle the replacement syntax
@@ -110,16 +313,20 @@ endfunction
 "     - 'case: 1', a simple digit template like '#1', contains this number as 'num'
 "     - 'case: 2', case with a digit and a regular expression substitution like '#/a/b/1,
 "         contains the number as 'num', and the regular expression as 'pat' and 'sub'
+"   Both cases include the 'regex' key which contains the regular expression that matched
+"   the template variable.
 function s:TemplateStringSyntax(str)
     " digit case
-    let match = matchlist(a:str, '#\(\d\+\)')
+    let pat = '#\(\d\+\)'
+    let match = matchlist(a:str, pat)
     if !empty(match)
-        return #{case: 1, num: str2nr(match[1])}
+        return #{case: 1, num: str2nr(match[1]), regex: pat}
     endif
     " sub case
-    let match = matchlist(a:str, '#/\(.\{-1,}\)/\(.\{-}\)/\(\d\+\)')
+    let pat = '#/\(.\{-1,}\)/\(.\{-}\)/\(\d\+\)'
+    let match = matchlist(a:str, pat)
     if !empty(match)
-        return #{case: 2, pat: match[1], sub: match[2], num: str2nr(match[3])}
+        return #{case: 2, pat: match[1], sub: match[2], num: str2nr(match[3]), regex: pat}
     endif
     " def case
     return #{case: 0}
@@ -141,7 +348,7 @@ endfunction
 function vimse#AllMatchStrPos(expr, pat, count = -1)
     let [listmode, res, currline, curridx] = [type(a:expr) == v:t_list, [], 0, 0]
     " wrap in list
-    let str = listmode ? a:expr : [a:expr]
+    let str = listmode ? copy(a:expr) : [a:expr]
     " while list not empty
     while !empty(str) && (a:count < 0 || len(res) < a:count)
         let [match, line, idx, end] = matchstrpos(str, a:pat)
@@ -219,6 +426,7 @@ endfunction
 " Returns:
 "   The end position of the cursor after the insert.
 function vimse#SmartInsert(lnum, lines, indent = -1)
+    if empty(a:lines) | return [line('.'), col('.')] | endif
     call vimse#IndentLines(a:lines, a:indent)
     " set first line
     call setline(a:lnum, get(a:lines, 0, ''))
