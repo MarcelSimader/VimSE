@@ -246,7 +246,7 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
             let lidx = genDict['lidx']
             let newlines = genDict['Generate'](lidx, genDict['match'], text)
             " actually replace conents now
-            call vimse#SmartInsert(genDict['lnum'], newlines)
+            undojoin | call vimse#SmartInsert(genDict['lnum'], newlines)
             " update lines list and all references in case we added lines
             let lines = slice(lines, 0, lidx) + newlines + slice(lines, lidx + 1)
             let linediff = len(newlines) - 1
