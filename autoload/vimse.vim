@@ -3,10 +3,13 @@
 " Date: 15.12.2021
 " (c) Marcel Simader 2021
 
+" Conservative estimate about how long a line can be for these functions to work.
+let g:VIMSE_EOL = 99999999
+
 " A primitve verison of Vim's builint 'input()' function, but with a callback for each
 " input key. This function asks the user for a prompt string and then captures characters
 " that are typed. Backspaces are supported, but almost nothing else. An input is
-" terminalted by Escape or Enter. When a character is typed, 'OnChange' is called.
+" terminated by Escape or Enter. When a character is typed, 'OnChange' is called.
 " Completion mode is largely supported, including custom completion functions.
 "
 " Arguments:
@@ -117,9 +120,9 @@ endfunction
 " 2 | #2
 " 3 | ```
 "
-" The call would look like this: 'vimse#TemplateString(1, 3, 0, 999, 2)'. One may also
-" name the arguments, provide defaults, or provide a completion argument (see ':h input()'
-" for details).
+" The call would look like this: 'vimse#TemplateString(1, 3, 0, g:VIMSE_EOL, 2)'. One may
+" also name the arguments, provide defaults, or provide a completion argument (see
+" ':h input()' for details).
 "
 " It is possible to modify the user input before putting it into the template by writing
 " the argument not as '#n', but as '#/pat/sub/n'. For instance if we wanted to make sure
@@ -176,18 +179,18 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
         " with the key 'lnum', 'line', 'pat', and 'Generate' (and 'popup')
         let hashGenDict = {}
         for [line, match, lnum, column, length] in positions
-            let hashGenDict[s:PosHash(lnum, column)] = {
+            let hashGenDict[s:posHash(lnum, column)] = {
                         \ 'lnum': lnum,
                         \ 'column': column,
                         \ 'lidx': lnum - a:lstart,
                         \ 'match': match,
                         \ 'Generate': {lidx, match, text ->
-                        \     s:TemplateStringVariable(lines[lidx], pat, text, match)},
+                        \     s:templateStringVariable(lines[lidx], text, match)},
                         \ }
         endfor
         " highlight area and redraw
         let match_id = (rand() % 8192) + 1
-        call matchaddpos('Search', match_positions, 999, match_id) | redraw
+        call matchaddpos('Search', match_positions, g:VIMSE_EOL, match_id) | redraw
         " if possible, open a popup cause why not
         if haspopup
             for [hash, genDict] in items(hashGenDict)
@@ -273,7 +276,7 @@ endfunction
 "   column, the column
 " Returns:
 "   a string hash
-function s:PosHash(lnum, column)
+function s:posHash(lnum, column)
     let s = string([a:lnum, a:column])
     return exists('*sha256') ? sha256(s) : s
 endfunction
@@ -281,15 +284,14 @@ endfunction
 " Takes in a replacement variable pattern, and a match and returns the replaced lines as
 " single string.
 " Arguments:
-"   line, the line to substitute
-"   pat, the pattern to look for in said line
+"   line, the line to substitute inside
 "   text, the text to replace the match by
 "   match, a match of the replacement variable pattern
 " Returns:
 "   a list of strings with the interpreted variable, or an empty list if an error occurred
-function s:TemplateStringVariable(line, pat, text, match)
+function s:templateStringVariable(line, text, match)
     " analyze the template string further to determine what to do
-    let syndict = s:TemplateStringSyntax(a:match)
+    let syndict = s:templateStringSyntax(a:match)
     if syndict['case'] == 1
         " case of simple substitution
         let new = a:text
@@ -315,7 +317,7 @@ endfunction
 "         contains the number as 'num', and the regular expression as 'pat' and 'sub'
 "   Both cases include the 'regex' key which contains the regular expression that matched
 "   the template variable.
-function s:TemplateStringSyntax(str)
+function s:templateStringSyntax(str)
     " digit case
     let pat = '#\(\d\+\)'
     let match = matchlist(a:str, pat)
@@ -385,6 +387,7 @@ function vimse#StrIndent(str)
 endfunction
 
 " Indents the lines in argument 'lines' from index start to end.
+" NOTE: `start` and `end` are NOT line numbers! They are indices.
 " Examples:
 " 1.)
 " | ABC 123                    |     ABC 123
@@ -405,36 +408,40 @@ endfunction
 " Returns:
 "   The indented lines as new list.
 function vimse#IndentLines(lines, indent, start = 0, end = len(a:lines) - 1)
+    let lines = copy(a:lines)
     " early abort
-    if a:end < a:start || a:indent < 0
-        return a:lines
-    endif
+    if a:indent < 0 | return lines | endif
+
+    let [start, end] = [a:start, a:end]
+    if end < start | let [start, end] = [end, start] | endif
+
     " get smallest indent in lines
-    let minindent = min(map(a:lines[a:start:a:end], 'vimse#StrIndent(v:val)'))
+    let indents = mapnew(lines[start:end], 'vimse#StrIndent(v:val)')
+    let minindent = min(indents)
     " actual indenting by adding an offset to all (trimmed) strings
     " that makes the least indented line level with a:indent
-    for i in range(a:start, a:end)
-        let indentstr = repeat(' ', vimse#StrIndent(a:lines[i]) + (a:indent - minindent))
-        let a:lines[i] = indentstr.trim(a:lines[i])
+    for i in range(start, end)
+        let indentstr = repeat(' ', indents[i - start] + a:indent - minindent)
+        " trim only at beginning of string
+        let lines[i] = indentstr.trim(lines[i], " \t", 1)
     endfor
-    return a:lines
+    return lines
 endfunction
 
 " Inserts the lines in argument 'lines' with indent of 'indent'
 " (see 'vimse#IndentLines') at position 'lnum'. Line 'lnum'
 " is overwritten, and the rest of the lines are inserted after it.
-" Returns:
-"   The end position of the cursor after the insert.
 function vimse#SmartInsert(lnum, lines, indent = -1)
-    if empty(a:lines) | return [line('.'), col('.')] | endif
-    call vimse#IndentLines(a:lines, a:indent)
+    if empty(a:lines) | return | endif
+    let lnum = s:lnum(a:lnum)
+    let lines = vimse#IndentLines(a:lines, a:indent)
+
     " set first line
-    call setline(a:lnum, get(a:lines, 0, ''))
+    call setline(lnum, get(lines, 0, ''))
     " insert other lines
-    for i in range(1, len(a:lines) - 1)
-        call append(a:lnum + i - 1, get(a:lines, i, ''))
+    for i in range(1, len(lines) - 1)
+        call append(lnum + i - 1, get(lines, i, ''))
     endfor
-    return [a:lnum + len(a:lines), strlen(get(a:lines, -1, '')) + 1]
 endfunction
 
 " Surrounds the lines given by 'lstart', 'lend', with the column
@@ -446,59 +453,81 @@ endfunction
 "   lstart, the start line in the current buffer
 "   lend, the end line in the current buffer
 "   cstart, the start column in the current buffer
-"   cend, the end column in the current buffer
+"   cend, the end column in the current buffer,
+"         `-1` means to the end of the line
 "   textbefore, the text to appear before '[lstart, cstart]'
 "   textafter, the text to appear after '[lend, cend]'
 "   [middleindent,] when non-negative, sets the indent of lines
-"       between 'lstart' and 'lend'
-" Returns:
-"   The end position of the cursor after the insert.
+"       between 'lstart' and 'lend', excluding the added text
 function vimse#SmartSurround(lstart, lend, cstart, cend,
             \ textbefore, textafter, middleindent = -1)
+    let [lstart, lend] = [s:lnum(a:lstart), s:lnum(a:lend)]
+    let [cstart, cend] = [a:cstart, a:cend]
+    if cend == -1 | let cend = g:VIMSE_EOL | endif
+    if lstart > lend | let [lstart, lend] = [lend, lstart] | endif
+    if cstart > cend | let [cstart, cend] = [cend, cstart] | endif
+
+    let cstart_m1       = max([cstart - 1, 0])
+    let cend_m1         = max([cend - 1, 0])
+    let cend_mcstart_m1 = max([cend - cstart - 1, 0])
+
     let startindent = indent(a:lstart)
+
     " construct lines
-    if a:lend - a:lstart <= 0
-        let middle = [getline(a:lstart)]
+    let lines = []
+    if lend - lstart == 0
+        let middle = [getline(lstart)]
         " ~~~~~~~~~~
         " (L) [ ]
-        let lines = [strpart(middle[0], 0, a:cstart - 1)
+        let lines = [strpart(middle[0], 0, cstart)
                     \ .get(a:textbefore, 0, '')]
         " [ ] append
         let lines += a:textbefore[1:]
         " [ ] (I) [ ] concat
-        let lines[-1] .= strpart(middle[0], a:cstart - 1, a:cend - a:cstart)
+        let lines[-1] .= strpart(middle[0], cstart, cend - cstart)
                     \ .get(a:textafter, 0, '')
         " [ ] append
         let lines += a:textafter[1:]
         " [ ] (R) concat
-        let lines[-1] .= strpart(middle[0], a:cend - 1, 999999)
+        let lines[-1] .= strpart(middle[0], cend)
     else
-        let middle = getline(a:lstart, a:lend)
+        let middle = getline(lstart, lend)
         " ~~~~~~~~~~
         " (LL) [ ]
-        let lines = [strpart(middle[0], 0, a:cstart - 1)
+        let lines = [strpart(middle[0], 0, cstart_m1)
                     \ .get(a:textbefore, 0, '')]
         " [ ] append
         let lines += a:textbefore[1:]
         " [ ] (LR) concat
-        let lines[-1] .= strpart(middle[0], a:cstart - 1, 999999)
+        let lines[-1] .= strpart(middle[0], cstart_m1)
         "     ((I)) append
         let lines += middle[1:-2]
         "     (RL) [ ] concat
-        let lines += [strpart(middle[-1], 0, a:cend - 1)]
+        let lines += [strpart(middle[-1], 0, cend_m1)]
         let lines[-1] .= get(a:textafter, 0, '')
         " [ ] append
         let lines += a:textafter[1:]
         " [ ] (RR) concat
-        let lines[-1] .= strpart(middle[-1], a:cend - 1, 999999)
+        let lines[-1] .= strpart(middle[-1], cend_m1)
     endif
+
     " indent
     if a:middleindent >= 0
-        call vimse#IndentLines(lines, a:middleindent, 1, len(lines) - 2)
+        let indentstart = len(a:textbefore) - 1
+        let indentend   = len(lines) - (len(a:textafter) - 1) - 1
+        if (indentstart >= 0) && (indentend < len(lines)) && (indentend >= indentstart)
+            let lines = vimse#IndentLines(lines, a:middleindent, indentstart, indentend)
+        endif
     endif
+
     " delete lines so we don't copy the middle ones
-    call deletebufline(bufname(), a:lstart + 1, a:lend)
+    call deletebufline(bufname(), lstart + 1, lend)
     " set and return final pos
-    return vimse#SmartInsert(a:lstart, lines, startindent)
+    call vimse#SmartInsert(lstart, lines, startindent)
+endfunction
+
+" Make sure line numbers that are 0 get normalized to 1. Otherwise leave it alone.
+function s:lnum(lnum)
+    return (a:lnum == 0) ? 1 : a:lnum
 endfunction
 
