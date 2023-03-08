@@ -17,35 +17,35 @@ endfunction
 
 " Simple inputs
 function! test_smartsurround#t0()
-    call s:Test([''], [''], 0, 0, 0, 0, [], [], -1)
-    call s:Test(['Test'], ['Test'], 1, 0, 2, 0, [], [], 1)
-    call s:Test(['Test'], ['Test'], 1, 1, 0, 6, [], [], -1)
+    call s:Test([''], [''], 0, 0, 1, 1, [], [], -1)
+    call s:Test(['Test'], ['Test'], 1, 0, 3, 1, [], [], 1)
+    call s:Test(['Test'], ['Test'], 1, 1, 1, 7, [], [], -1)
 endfunction
 
 " Surround one line with one line
 function! test_smartsurround#t1()
     call s:Test(['Start!I love you, mom.End!'], ['I love you, mom.'],
-                \ 1, 1, 0, -1, ['Start!'], ['End!'], -1)
+                \ 1, 1, 1, -1, ['Start!'], ['End!'], -1)
     call s:Test(['I Start!loEnd!ve you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 2, 4, ['Start!'], ['End!'], -1)
+                \ 1, 1, 3, 5, ['Start!'], ['End!'], -1)
     call s:Test(['I loStart!End!ve you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 4, 4, ['Start!'], ['End!'], 4)
+                \ 1, 1, 5, 5, ['Start!'], ['End!'], 4)
 endfunction
 
 " Surrund one line with multiple lines
 function! test_smartsurround#t2()
     call s:Test(['Start!', 'I love you, mom.', 'End!'], ['I love you, mom.'],
-                \ 1, 1, 0, -1, ['Start!', ''], ['', 'End!'], -1)
+                \ 1, 1, 1, -1, ['Start!', ''], ['', 'End!'], -1)
     call s:Test(['I loStart!', 've ', 'End!you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 4, 7, ['Start!', ''], ['', 'End!'], -1)
+                \ 1, 1, 5, 8, ['Start!', ''], ['', 'End!'], -1)
     call s:Test(['I loStart!', '       ve ', 'End!you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 4, 7, ['Start!', ''], ['', 'End!'], 7)
+                \ 1, 1, 5, 8, ['Start!', ''], ['', 'End!'], 7)
     call s:Test(['I love ', 'End!you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 0, 7, [], ['', 'End!'], 7)
+                \ 1, 1, 1, 8, [], ['', 'End!'], 7)
     call s:Test(['I love ', '', 'End!you, mom.'], ['I love you, mom.'],
-                \ 1, 1, 4, 7, [], ['', '', 'End!'], -1)
+                \ 1, 1, 5, 8, [], ['', '', 'End!'], -1)
     call s:Test(['Start!', '', '', 'I love you, mom.', '', 'End!'], ['I love you, mom.'],
-                \ 1, 1, 0, -1, ['Start!', '', '', ''], ['', '', 'End!'], -1)
+                \ 1, 1, 1, -1, ['Start!', '', '', ''], ['', '', 'End!'], -1)
 endfunction
 
 " Surround multiple lines with multiple lines

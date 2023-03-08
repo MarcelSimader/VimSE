@@ -479,17 +479,17 @@ function vimse#SmartSurround(lstart, lend, cstart, cend,
         let middle = [getline(lstart)]
         " ~~~~~~~~~~
         " (L) [ ]
-        let lines = [strpart(middle[0], 0, cstart)
+        let lines = [strpart(middle[0], 0, cstart_m1)
                     \ .get(a:textbefore, 0, '')]
         " [ ] append
         let lines += a:textbefore[1:]
         " [ ] (I) [ ] concat
-        let lines[-1] .= strpart(middle[0], cstart, cend - cstart)
+        let lines[-1] .= strpart(middle[0], cstart_m1, cend - cstart)
                     \ .get(a:textafter, 0, '')
         " [ ] append
         let lines += a:textafter[1:]
         " [ ] (R) concat
-        let lines[-1] .= strpart(middle[0], cend)
+        let lines[-1] .= strpart(middle[0], cend_m1)
     else
         let middle = getline(lstart, lend)
         " ~~~~~~~~~~
