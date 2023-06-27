@@ -110,6 +110,31 @@ function s:getcompletion_custom(pat, type, ArgLead = '', CmdLine = '', CursorPos
                 \ : function(funcname)(a:ArgLead, a:CmdLine, a:CursorPos)
 endfunction
 
+" First, executes 'vimse#SmartInsert' with the given arguments, and then
+" 'vimse#TemplateString' on the inserted text.
+" See:
+"   vimse#SmartInsert
+"   vimse#TemplateString
+function vimse#Template(lnum, lines,
+            \ numargs, argnames = [], argdefaults = [], argcomplete = [],
+            \ indent = -1)
+    call vimse#SmartInsert(a:lnum, a:lines, a:indent)
+    return vimse#TemplateString(a:lnum, a:lnum + len(a:lines), 0, g:VIMSE_EOL,
+                \ a:numargs, a:argnames, a:argdefaults, a:argcomplete)
+endfunction
+
+" Same as 'vimse#Template' but for inline, surround-based templates.
+" See:
+"   vimse#Template
+function vimse#InlineTemplate(buf, lstart, lend, cstart, cend, before, after,
+            \ numargs, argnames = [], argdefaults = [], argcomplete = [],
+            \ middleindent = -1)
+    call vimse#SmartSurround(a:lstart, a:lend, a:cstart, a:cend, a:before, a:after,
+                \ a:middleindent)
+    return vimse#TemplateString(a:lstart, a:lend, a:cstart, a:cend, a:numargs, a:argnames,
+                \ a:argdefaults, a:argcomplete)
+endfunction
+
 " Takes a section of text as input and replaces specific patterns with the user's input.
 "
 " This is easiest explained with an example case, here we replace the language and the
