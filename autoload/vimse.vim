@@ -115,24 +115,33 @@ endfunction
 " See:
 "   vimse#SmartInsert
 "   vimse#TemplateString
-function vimse#Template(lnum, lines,
-            \ numargs, argnames = [], argdefaults = [], argcomplete = [],
+function vimse#Template(lnum, lines, numargs,
+            \ finalcursoroffset = [],
+            \ argnames = [], argdefaults = [], argcomplete = [],
             \ indent = -1)
     call vimse#SmartInsert(a:lnum, a:lines, a:indent)
-    return vimse#TemplateString(a:lnum, a:lnum + len(a:lines), 0, g:VIMSE_EOL,
+    let ret = vimse#TemplateString(a:lnum, a:lnum + len(a:lines), 0, g:VIMSE_EOL,
                 \ a:numargs, a:argnames, a:argdefaults, a:argcomplete)
+    if ret == 1 && len(a:finalcursoroffset) >= 2
+        call cursor([a:finalcursoroffset[0] + a:lnum] + a:finalcursoroffset[1:])
+    endif
 endfunction
 
 " Same as 'vimse#Template' but for inline, surround-based templates.
 " See:
 "   vimse#Template
-function vimse#InlineTemplate(buf, lstart, lend, cstart, cend, before, after,
-            \ numargs, argnames = [], argdefaults = [], argcomplete = [],
+function vimse#InlineTemplate(lstart, lend, cstart, cend, before, after, numargs,
+            \ finalcursoroffset = [],
+            \ argnames = [], argdefaults = [], argcomplete = [],
             \ middleindent = -1)
     call vimse#SmartSurround(a:lstart, a:lend, a:cstart, a:cend, a:before, a:after,
                 \ a:middleindent)
-    return vimse#TemplateString(a:lstart, a:lend, a:cstart, a:cend, a:numargs, a:argnames,
-                \ a:argdefaults, a:argcomplete)
+    let ret = vimse#TemplateString(a:lstart, a:lend, a:cstart, a:cend, a:numargs,
+                \ a:argnames, a:argdefaults, a:argcomplete)
+    if ret == 1 && len(a:finalcursoroffset) >= 2
+        call cursor([a:finalcursoroffset[0] + a:lstart,
+                  \  a:finalcursoroffset[1] + a:cstart] + a:finalcursoroffset[2:])
+    endif
 endfunction
 
 " Takes a section of text as input and replaces specific patterns with the user's input.
@@ -157,6 +166,9 @@ endfunction
 " 1 | ```#1
 " 2 |   #/\\n/\n  /2
 " 3 | ```
+"
+" To include a literal '#', simply use '\#'. For instance, to include '#1' in the
+" output, write '\#1'.
 "
 " Arguments:
 "   lstart, the line to start on
@@ -186,7 +198,7 @@ function vimse#TemplateString(lstart, lend, cstart, cend, numargs,
     " iterates over indices and makes regular expression pattern for the template
     " variables
     for argidx in range(a:numargs)
-        let pat      = '#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
+        let pat      = '\\\@1<!#\(/.\{-1,}/.\{-}/\)\='.string(argidx + 1)
         let name     = get(a:argnames   , argidx, 'Text: ')
         let default  = get(a:argdefaults, argidx, '')
         let complete = get(a:argcomplete, argidx, '')
