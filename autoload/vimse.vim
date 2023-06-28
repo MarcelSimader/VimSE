@@ -118,12 +118,23 @@ endfunction
 function vimse#Template(lnum, lines, numargs,
             \ finalcursoroffset = [],
             \ argnames = [], argdefaults = [], argcomplete = [],
-            \ indent = -1)
+            \ indent = -1, noundo = 0)
+    " save undo state
+    let undostate = undotree()['seq_cur']
+
     call vimse#SmartInsert(a:lnum, a:lines, a:indent)
     let ret = vimse#TemplateString(a:lnum, a:lnum + len(a:lines), 0, g:VIMSE_EOL,
                 \ a:numargs, a:argnames, a:argdefaults, a:argcomplete)
-    if ret == 1 && len(a:finalcursoroffset) >= 2
-        call cursor([a:finalcursoroffset[0] + a:lnum] + a:finalcursoroffset[1:])
+
+    if ret == 0 && !a:noundo
+        " set to 'undostate' for all other changes
+        " and undo once for this method
+        silent execute 'undo '.undostate
+        silent undo
+    else
+        if len(a:finalcursoroffset) >= 2
+            call cursor([a:finalcursoroffset[0] + a:lnum] + a:finalcursoroffset[1:])
+        endif
     endif
 endfunction
 
@@ -133,14 +144,25 @@ endfunction
 function vimse#InlineTemplate(lstart, lend, cstart, cend, before, after, numargs,
             \ finalcursoroffset = [],
             \ argnames = [], argdefaults = [], argcomplete = [],
-            \ middleindent = -1)
+            \ middleindent = -1, noundo = 0)
+    " save undo state
+    let undostate = undotree()['seq_cur']
+
     call vimse#SmartSurround(a:lstart, a:lend, a:cstart, a:cend, a:before, a:after,
                 \ a:middleindent)
     let ret = vimse#TemplateString(a:lstart, a:lend, a:cstart, a:cend, a:numargs,
                 \ a:argnames, a:argdefaults, a:argcomplete)
-    if ret == 1 && len(a:finalcursoroffset) >= 2
-        call cursor([a:finalcursoroffset[0] + a:lstart,
-                  \  a:finalcursoroffset[1] + a:cstart] + a:finalcursoroffset[2:])
+
+    if ret == 0 && !a:noundo
+        " set to 'undostate' for all other changes
+        " and undo once for this method
+        silent execute 'undo '.undostate
+        silent undo
+    else
+        if len(a:finalcursoroffset) >= 2
+            call cursor([a:finalcursoroffset[0] + a:lstart,
+                      \  a:finalcursoroffset[1] + a:cstart] + a:finalcursoroffset[2:])
+        endif
     endif
 endfunction
 
