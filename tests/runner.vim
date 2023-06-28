@@ -55,7 +55,7 @@
 const g:DEBUG = v:false
 const g:MAX_NUM_TESTS = 30
 " set test directory for all tests to access, remove trailing /
-const g:TEST_DIR = trim(expand('<script>:h'), '/', 2)
+const g:TEST_DIR = trim(expand('<sfile>:h'), '/', 2)
 
 " gather test files with glob
 const s:testfiles = split(glob(g:TEST_DIR.'/test_*'), '\n')
