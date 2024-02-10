@@ -3,7 +3,7 @@
 " (c) Marcel Simader 2023
 
 " Force reloading of functions in autoload script
-execute 'source '.g:TEST_DIR.'/../autoload/vimse.vim'
+execute 'source '.g:TEST_DIR.'/../autoload/vimsetext.vim'
 
 let s:expr0 =<< END
 This is a test.
@@ -41,14 +41,14 @@ This is a test.
 Yup.
     Yup
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr0, 0))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr0, 0))
 
     let expected =<< END
      Yup	 does not matter here
    But it does here!
 Yes...
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr1, 0))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr1, 0))
 endfunction
 
 " Single space indent on examples
@@ -60,14 +60,14 @@ function! test_indentlines#t1()
  Yup.
      Yup
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr0, 1))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr0, 1))
 
     let expected =<< END
       Yup	 does not matter here
     But it does here!
  Yes...
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr1, 1))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr1, 1))
 endfunction
 
 " Ranged 4-space indent on examples
@@ -79,13 +79,14 @@ This is a test.
     Yup.
 	Yup
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr0, 4, 1, 3))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr0, 4, 1, 3))
 
     let expected =<< END
 		Yup	 does not matter here
        But it does here!
     Yes...
 END
-    call assert_equal(expected, vimse#IndentLines(s:expr1, 4, 1, 2))
+    call assert_equal(expected, vimsetext#IndentLines(s:expr1, 4, 1, 2))
 endfunction
 
+" vim: noexpandtab

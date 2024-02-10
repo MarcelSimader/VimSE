@@ -3,10 +3,10 @@
 " (c) Marcel Simader 2023
 
 " Force reloading of functions in autoload script
-execute 'source '.g:TEST_DIR.'/../autoload/vimse.vim'
+execute 'source '.g:TEST_DIR.'/../autoload/vimsetext.vim'
 
 function! s:Test(str, expected_indent)
-    call assert_equal(a:expected_indent, vimse#StrIndent(a:str))
+    call assert_equal(a:expected_indent, vimsetext#StrIndent(a:str))
 endfunction
 
 " ~~~~~~~~~~~~~~~~~~~~ Tests ~~~~~~~~~~~~~~~~~~~~
