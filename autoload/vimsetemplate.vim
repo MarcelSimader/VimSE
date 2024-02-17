@@ -329,7 +329,7 @@ endfunction
 "   [argnames,] the names displayed for each argument input prompt as list
 "   [argdefaults,] the default text displayed for each input prompt as list
 "   [argcomplete,] the completion argument for each input prompt as list
-"   [skipundo,] when this is set to false, aborting the template will not undo the changes
+"   [skipundo,] when this is set to true, aborting the template will not undo the changes
 "       made so far, otherwise the undo is performed automatically
 "   [joinundo,] when this is set to true, the undo block created by this function is
 "       joined with the callee's (see |undo-blocks|)
@@ -376,7 +376,7 @@ function vimsetemplate#TemplateString(winid, lstart, lend, cstart, cend,
                         \         val[2] + 1,
                         \         val[3] - val[2],
                         \     ]}),
-                        \ {_, val -> (val[3] > a:cstart) && ((val[3] + val[4]) < cend)}
+                        \ {_, val -> (val[3] >= a:cstart) && ((val[3] + val[4]) <= cend)}
                         \ )
             let full_matches += new_full_matches
             let position_matches += map(new_full_matches, {_, val -> val[2:4]})
