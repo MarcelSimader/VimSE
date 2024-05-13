@@ -187,22 +187,21 @@ endfunction
 "       between 'lstart' and 'lend', excluding the added text
 function vimsetext#SmartSurround(lstart, lend, cstart, cend,
             \ textbefore, textafter, middleindent = -1)
-    let [lstart, lend] = [s:lnum(a:lstart), s:lnum(a:lend)]
+    let [lstart, lend, flipped] = [s:lnum(a:lstart), s:lnum(a:lend), v:false]
     let [cstart, cend] = [a:cstart, a:cend]
     if cend == -1 | let cend = g:VIMSE_EOL | endif
-    if lstart > lend | let [lstart, lend] = [lend, lstart] | endif
-    if cstart > cend | let [cstart, cend] = [cend, cstart] | endif
-
-    let cstart_m1       = max([cstart - 1, 0])
-    let cend_m1         = max([cend - 1, 0])
-    let cend_mcstart_m1 = max([cend - cstart - 1, 0])
+    if lstart > lend | let [lstart, lend, flipped] = [lend, lstart, v:true] | endif
+    if flipped | let [cstart, cend] = [cend, cstart] | endif
 
     let startindent = indent(a:lstart)
+    let [cstart, cend] = [max([cstart - startindent, 0]), max([cend - startindent, 0])]
+    let cstart_m1 = max([cstart - 1, 0])
+    let cend_m1   = max([cend - 1, 0])
 
     " construct lines
     let lines = []
     if lend - lstart == 0
-        let middle = [getline(lstart)]
+        let middle = [trim(getline(lstart), " \t", 1)]
         " ~~~~~~~~~~
         " (L) [ ]
         let lines = [strpart(middle[0], 0, cstart_m1)
@@ -217,7 +216,7 @@ function vimsetext#SmartSurround(lstart, lend, cstart, cend,
         " [ ] (R) concat
         let lines[-1] .= strpart(middle[0], cend_m1)
     else
-        let middle = getline(lstart, lend)
+        let middle = map(getline(lstart, lend), {_, v -> trim(v, " \t", 1)})
         " ~~~~~~~~~~
         " (LL) [ ]
         let lines = [strpart(middle[0], 0, cstart_m1)
@@ -240,7 +239,7 @@ function vimsetext#SmartSurround(lstart, lend, cstart, cend,
     " indent
     if a:middleindent >= 0
         let indentstart = len(a:textbefore) - 1
-        let indentend   = len(lines) - (len(a:textafter) - 1) - 1
+        let indentend   = len(lines) - len(a:textafter)
         if (indentstart >= 0) && (indentend < len(lines)) && (indentend >= indentstart)
             let lines = vimsetext#IndentLines(
                         \ lines, a:middleindent, indentstart, indentend)
